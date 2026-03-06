@@ -1,0 +1,16 @@
+{
+  "extends": "solhint:recommended",
+  "rules": {
+    "compiler-version": ["error", "^0.8.24"],
+    "avoid-suicide": "error",
+    "avoid-sha3": "warn",
+    "no-empty-blocks": "warn",
+    "func-visibility": ["warn", { "ignoreConstructors": true }],
+    "state-visibility": "warn",
+    "not-rely-on-time": "off",
+    "reason-string": ["warn", { "maxLength": 64 }],
+    "custom-errors": ["warn", { "enforceRevertWith": "customError" }],
+    "named-parameters-mapping": "warn",
+    "gas-custom-errors": "warn"
+  }
+}

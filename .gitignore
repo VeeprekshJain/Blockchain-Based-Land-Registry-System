@@ -1,0 +1,49 @@
+# ─── Dependencies ────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ─── Build Outputs ────────────────────────────────────────────────────────────
+dist/
+build/
+out/
+.next/
+.turbo/
+
+# ─── Hardhat / Blockchain ─────────────────────────────────────────────────────
+cache/
+artifacts/
+typechain-types/
+deployments/localhost/
+
+# ─── Environment Variables ────────────────────────────────────────────────────
+.env
+.env.local
+.env.development
+.env.production
+.env*.local
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── Testing ──────────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ─── OS / IDE ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ─── TypeScript ──────────────────────────────────────────────────────────────
+*.tsbuildinfo

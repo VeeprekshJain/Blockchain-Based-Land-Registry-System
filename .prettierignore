@@ -1,0 +1,11 @@
+node_modules
+dist
+build
+.next
+out
+coverage
+artifacts
+cache
+typechain-types
+deployments/localhost
+*.min.js
