@@ -17,6 +17,10 @@ export interface Land {
   registeredAt: string;
   lastTransferAt: string;
   createdAt: string;
+  liveOwnerAddress?: string;
+  liveOwnerName?: string;
+  liveLastTransferAt?: string;
+  liveIsActive?: boolean;
 }
 
 export interface PaginatedLands {
@@ -32,10 +36,10 @@ export interface LandResponse {
 }
 
 export const landsApi = {
-  list: (page = 1, limit = 20, active?: boolean) =>
+  list: (page = 1, limit = 20, active?: boolean, q?: string) =>
     apiClient
       .get<PaginatedLands>('/lands', {
-        params: { page, limit, ...(active !== undefined ? { active } : {}) },
+        params: { page, limit, ...(active !== undefined ? { active } : {}), ...(q ? { q } : {}) },
       })
       .then((r) => r.data),
 

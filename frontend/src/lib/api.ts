@@ -3,6 +3,7 @@
  * Business logic (endpoints) will be added in separate service files.
  */
 import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
+import { getAuthToken, clearAuthToken, maskTokenForLog } from './authToken';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000/api/v1';
 
@@ -18,8 +19,11 @@ export const apiClient: AxiosInstance = axios.create({
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('accessToken');
+      const token = getAuthToken();
       if (token) {
+        // do not log full token
+        // eslint-disable-next-line no-console
+        console.debug('[api] Attaching Authorization header — token:', maskTokenForLog(token));
         config.headers.Authorization = `Bearer ${token}`;
       }
     }
@@ -32,10 +36,13 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // TODO: implement silent token refresh
+    const status = error.response?.status;
+    if (status === 401) {
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('accessToken');
+        // clear any invalid token and force login
+        clearAuthToken();
+        // eslint-disable-next-line no-console
+        console.warn('[api] 401 received — cleared token and redirecting to /login');
         window.location.href = '/login';
       }
     }

@@ -28,6 +28,8 @@ export const TransferOwnershipSchema = z.object({
   landId:       nonEmpty('landId'),
   newOwner:     ethAddress,
   newOwnerName: nonEmpty('newOwnerName').max(128),
+  transferPrice: z.string().optional(), // Optional: transfer price for fraud detection
+  ipAddress: z.string().optional(), // Optional: user IP for geolocation check
 });
 export type TransferOwnershipInput = z.infer<typeof TransferOwnershipSchema>;
 
@@ -48,9 +50,20 @@ export const UpdateDocumentHashSchema = z.object({
 export type UpdateDocumentHashInput = z.infer<typeof UpdateDocumentHashSchema>;
 
 // GET /lands?page=1&limit=20
+// Handles empty strings gracefully by coercing to NaN, then catching with default()
 export const PaginationQuerySchema = z.object({
-  page:  z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page:  z
+    .union([z.string().trim(), z.number()])
+    .pipe(z.coerce.number().int().min(1).default(1))
+    .catch(1),
+  limit: z
+    .union([z.string().trim(), z.number()])
+    .pipe(z.coerce.number().int().min(1).max(200).default(20))
+    .catch(20),
+  q: z
+    .union([z.string().trim(), z.undefined()])
+    .optional()
+    .transform((v) => (typeof v === 'string' ? v.trim() : undefined)),
 });
 export type PaginationQueryInput = z.infer<typeof PaginationQuerySchema>;
 

@@ -4,6 +4,8 @@
  */
 import { Router } from 'express';
 import landRouter from './landRoutes';
+import fraudRouter from './fraudRoutes';
+import devAuthRouter from './devAuthRoutes';
 
 export const apiRouter = Router();
 
@@ -15,17 +17,20 @@ apiRouter.get('/', (_req, res) => {
     version: '1.0.0',
     endpoints: {
       health: 'GET /health',
-      auth: '/api/v1/auth',
-      users: '/api/v1/users',
       lands: '/api/v1/lands',
-      transfers: '/api/v1/transfers',
-      documents: '/api/v1/documents',
+      fraud: '/api/v1/fraud',
+      auth: '/api/v1/auth (coming soon)',
+      users: '/api/v1/users (coming soon)',
+      transfers: '/api/v1/transfers (coming soon)',
+      documents: '/api/v1/documents (coming soon)',
     },
   });
 });
 
 // ─── Feature routes ───────────────────────────────────────────────────────────
 apiRouter.use('/lands', landRouter);
+apiRouter.use('/fraud', fraudRouter);
+apiRouter.use('/dev-auth', devAuthRouter);
 
 // (Uncomment as other features are implemented)
 // import { authRouter }      from './authRoutes';

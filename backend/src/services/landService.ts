@@ -17,6 +17,7 @@ import {
   getLandFromChain,
   type TxResult,
 } from './blockchainService';
+import { analyzeFraud, type FraudAnalysisResult } from './fraudService';
 import { AppError }  from '../middleware/errorHandler';
 import { logger }    from '../utils/logger';
 import type {
@@ -31,6 +32,7 @@ export interface LandWithTx {
   land: ILandDocument;
   txHash:      string;
   blockNumber: number;
+  fraudAnalysis?: FraudAnalysisResult; // Optional fraud analysis result
 }
 
 export interface PaginatedLands {
@@ -98,7 +100,28 @@ export async function transferLandOwnership(input: TransferOwnershipInput): Prom
     throw new AppError(422, `Land "${input.landId}" is not active`);
   }
 
-  // On-chain transfer
+  // ─ PRE-FLIGHT FRAUD ANALYSIS (before blockchain transaction) ────────────────
+  const fraudAnalysis = await analyzeFraud({
+    landId: input.landId,
+    fromAddress: existing.ownerAddress,
+    toAddress: input.newOwner,
+    transferPrice: input.transferPrice,
+    ipAddress: input.ipAddress,
+  });
+
+  logger.info(`[landService] Fraud analysis for transfer: score=${fraudAnalysis.fraudScore}, risk=${fraudAnalysis.riskLevel}`);
+
+  // Handle fraud risk levels
+  if (fraudAnalysis.riskLevel === 'critical') {
+    throw new AppError(403, `Transfer BLOCKED: Critical fraud risk detected. Score: ${fraudAnalysis.fraudScore}/100. Reasons: ${fraudAnalysis.reasons.join('; ')}`);
+  }
+
+  if (fraudAnalysis.riskLevel === 'high') {
+    logger.warn(`[landService] HIGH FRAUD RISK - Transfer requires manual review. LandId: ${input.landId}, Score: ${fraudAnalysis.fraudScore}`);
+    // High risk - proceed but flag for manual review (will be caught by controller)
+  }
+
+  // ─ ON-CHAIN TRANSFER ───────────────────────────────────────────────────────
   const txResult = await transferOwnershipOnChain({
     landId:       input.landId,
     newOwner:     input.newOwner,
@@ -106,7 +129,7 @@ export async function transferLandOwnership(input: TransferOwnershipInput): Prom
   });
   logger.info(`[landService] transferOwnership mined: block ${txResult.blockNumber}`);
 
-  // Sync chain record
+  // ─ SYNC CHAIN RECORD ──────────────────────────────────────────────────────
   const chainRecord = await getLandFromChain(input.landId);
 
   existing.ownerAddress  = input.newOwner.toLowerCase();
@@ -116,7 +139,12 @@ export async function transferLandOwnership(input: TransferOwnershipInput): Prom
   existing.lastTransferAt = bigintToDate(chainRecord.lastTransferAt);
   await existing.save();
 
-  return { land: existing, txHash: txResult.txHash, blockNumber: txResult.blockNumber };
+  return { 
+    land: existing, 
+    txHash: txResult.txHash, 
+    blockNumber: txResult.blockNumber,
+    fraudAnalysis, // Include fraud analysis in response
+  };
 }
 
 /**
@@ -194,9 +222,21 @@ export async function listLands(
   page: number,
   limit: number,
   filterActive?: boolean,
+  searchTerm?: string,
 ): Promise<PaginatedLands> {
   const filter: Record<string, unknown> = {};
   if (filterActive !== undefined) filter['isActive'] = filterActive;
+
+  // If a search term is provided, perform a case-insensitive partial match
+  if (searchTerm && searchTerm.trim().length > 0) {
+    const re = new RegExp(searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter['$or'] = [
+      { landId: re },
+      { ownerName: re },
+      { location: re },
+      { documentHash: re },
+    ];
+  }
 
   const [data, total] = await Promise.all([
     Land.find(filter)

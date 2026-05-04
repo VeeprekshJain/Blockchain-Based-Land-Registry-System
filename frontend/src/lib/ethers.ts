@@ -2,7 +2,7 @@
  * ethers.ts — Ethers.js provider and contract instance helpers.
  * Actual contract ABIs and addresses will be imported after deployment.
  */
-import { BrowserProvider, Contract, JsonRpcSigner, type Eip1193Provider } from 'ethers';
+import { BrowserProvider, Contract, JsonRpcSigner, type Eip1193Provider, type InterfaceAbi } from 'ethers';
 
 declare global {
   interface Window {
@@ -26,7 +26,7 @@ export async function getSigner(): Promise<JsonRpcSigner> {
   return provider.getSigner();
 }
 
-export async function getContract(address: string, abi: unknown[]): Promise<Contract> {
+export async function getContract(address: string, abi: InterfaceAbi): Promise<Contract> {
   const signer = await getSigner();
   return new Contract(address, abi, signer);
 }

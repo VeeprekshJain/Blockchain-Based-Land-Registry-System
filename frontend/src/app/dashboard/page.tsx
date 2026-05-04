@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { landsApi, type Land } from '../../lib/lands';
 import LandCard from '../../components/LandCard';
+import { getAuthToken, maskTokenForLog } from '../../lib/authToken';
+import { getContractAddress, isConfiguredContractAddress, readLandDetails } from '../../lib/landRegistry';
 
 export default function DashboardPage() {
   const [lands, setLands]     = useState<Land[]>([]);
@@ -11,22 +13,98 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [filter, setFilter]   = useState<'all' | 'active' | 'inactive'>('all');
+  const [search, setSearch]   = useState('');
+  const [query, setQuery]     = useState('');
 
   const limit = 12;
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError('');
     const active = filter === 'all' ? undefined : filter === 'active';
+    // Debug info
+    // eslint-disable-next-line no-console
+    console.debug('[Dashboard] API base:', process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1');
+    // eslint-disable-next-line no-console
+    console.debug('[Dashboard] endpoint: /lands', 'page', page, 'limit', limit, 'filterActive', active, 'q', query || '<none>');
+    const token = getAuthToken();
+    // eslint-disable-next-line no-console
+    console.debug('[Dashboard] has valid token?', !!token, 'token=', maskTokenForLog(token));
+
+    // If an invalid placeholder token was present, getAuthToken already removed it.
+    // But if raw invalid content exists (rare), inform the user and skip fetch.
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    if (raw && raw.trim().length > 0 && !token) {
+      setLoading(false);
+      setError('Invalid token stored. Please login again.');
+      return;
+    }
+
     landsApi
-      .list(page, limit, active)
-      .then((res) => {
-        setLands(res.data);
-        setTotal(res.meta.total);
+      .list(page, limit, active, query || undefined)
+      .then(async (res) => {
+        // eslint-disable-next-line no-console
+        console.debug('[Dashboard] API Response:', { status: 200, meta: res.meta });
+
+        const baseLands = res.data || [];
+
+        if (!isConfiguredContractAddress()) {
+          if (!cancelled) {
+            setLands(baseLands);
+            setTotal(res.meta?.total || 0);
+          }
+          return;
+        }
+
+        const merged = await Promise.all(
+          baseLands.map(async (land) => {
+            try {
+              const chain = await readLandDetails(land.landId);
+              return {
+                ...land,
+                liveOwnerAddress: chain.owner,
+                liveOwnerName: chain.ownerName,
+                liveLastTransferAt: new Date(Number(chain.lastTransferAt) * 1000).toISOString(),
+                liveIsActive: chain.isActive,
+              } as Land;
+            } catch {
+              return land;
+            }
+          }),
+        );
+
+        if (!cancelled) {
+          setLands(merged);
+          setTotal(res.meta?.total || 0);
+        }
       })
-      .catch(() => setError('Failed to load land records. Is the backend running?'))
-      .finally(() => setLoading(false));
-  }, [page, filter]);
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error('[Dashboard] Failed to load lands:', err);
+        const errorMsg = err?.response?.data?.message || err?.message || 'Failed to load land records.';
+        if (!cancelled) setError(errorMsg);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, filter, query]);
+
+  function handleSearchSubmit(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    setPage(1);
+    setQuery(search.trim());
+  }
+
+  function clearSearch() {
+    setSearch('');
+    setQuery('');
+    setPage(1);
+  }
 
   const totalPages = Math.ceil(total / limit);
 
@@ -41,6 +119,9 @@ export default function DashboardPage() {
               <p className="mt-1 text-sm text-gray-500">
                 {total} parcel{total !== 1 ? 's' : ''} registered on the blockchain
               </p>
+              {isConfiguredContractAddress() && (
+                <p className="mt-1 text-xs text-gray-400">Live chain view: {getContractAddress()}</p>
+              )}
             </div>
             <Link
               href="/register"
@@ -51,20 +132,36 @@ export default function DashboardPage() {
           </div>
 
           {/* Filters */}
-          <div className="mt-4 flex gap-2">
-            {(['all', 'active', 'inactive'] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => { setFilter(f); setPage(1); }}
-                className={`rounded-full px-4 py-1.5 text-xs font-medium capitalize transition ${
-                  filter === f
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {f}
-              </button>
-            ))}
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <form onSubmit={handleSearchSubmit} className="flex w-full gap-2 sm:w-auto">
+              <input
+                aria-label="Search lands"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by Land ID, owner, location or IPFS hash"
+                className="rounded-lg border px-3 py-2 text-sm shadow-sm"
+              />
+              <button type="submit" className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white">Search</button>
+              <button type="button" onClick={clearSearch} className="rounded-lg bg-gray-100 px-3 py-2 text-sm">Clear</button>
+            </form>
+
+            <div className="mt-2 sm:mt-0">
+              <div className="flex gap-2">
+                {(['all', 'active', 'inactive'] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => { setFilter(f); setPage(1); }}
+                    className={`rounded-full px-4 py-1.5 text-xs font-medium capitalize transition ${
+                      filter === f
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>

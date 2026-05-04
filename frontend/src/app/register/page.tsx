@@ -3,15 +3,10 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { landsApi } from '../../lib/lands';
 
-// Extend Window to include ethereum (MetaMask)
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: { method: string }) => Promise<string[]>;
-      selectedAddress?: string;
-    };
-  }
-}
+type EthereumProvider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  selectedAddress?: string;
+};
 
 type Field = { id: string; label: string; placeholder: string; type?: string };
 
@@ -37,11 +32,24 @@ export default function RegisterPage() {
   const [hasMetaMask, setHasMetaMask]     = useState(false);
 
   useEffect(() => {
-    setHasToken(!!localStorage.getItem('accessToken'));
+    const token = (async () => null)();
+    // use centralized token helper
+    // eslint-disable-next-line import/no-named-as-default-member
+    const { getAuthToken, maskTokenForLog, isValidJwtShape } = require('../../lib/authToken');
+    const raw = localStorage.getItem('accessToken');
+    const t = getAuthToken();
+    setHasToken(!!t);
+    // If there was a raw value but it's invalid, show clear message
+    if (raw && !isValidJwtShape(raw)) {
+      setError('Invalid token stored. Please login again.');
+    }
+    // eslint-disable-next-line no-console
+    console.debug('[Register] has valid token?', !!t, 'token=', maskTokenForLog(t));
     setHasMetaMask(typeof window !== 'undefined' && !!window.ethereum);
     // Auto-detect if wallet already connected
-    if (typeof window !== 'undefined' && window.ethereum?.selectedAddress) {
-      const addr = window.ethereum.selectedAddress;
+    const provider = typeof window !== 'undefined' ? (window.ethereum as EthereumProvider | undefined) : undefined;
+    if (provider?.selectedAddress) {
+      const addr = provider.selectedAddress;
       setWalletAddress(addr);
       setForm(prev => ({ ...prev, ownerAddress: addr }));
     }
@@ -53,7 +61,8 @@ export default function RegisterPage() {
       return;
     }
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const provider = window.ethereum as EthereumProvider;
+      const accounts = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
       const addr = accounts[0];
       setWalletAddress(addr);
       setForm(prev => ({ ...prev, ownerAddress: addr }));
@@ -76,12 +85,17 @@ export default function RegisterPage() {
         area:         form['area']         ?? '',
         documentHash: form['documentHash'] ?? '',
       });
+      // debug
+      // eslint-disable-next-line no-console
+      console.debug('[Register] POST /lands response meta/data keys:', Object.keys(res));
       setSuccess({ txHash: res.data.txHash, blockNumber: res.data.blockNumber });
       setForm({});
     } catch (err: unknown) {
-      const resp = (err as { response?: { data?: { message?: string; data?: string } } })?.response?.data;
-      // Show field-level Zod errors if present, else fall back to message
-      const msg = resp?.data
+      const resp = (err as { response?: { data?: { message?: string; data?: string; error?: string } } })?.response?.data;
+      // Backend Zod errors are returned in the `error` field; prefer that, then `data`, then `message`.
+      const msg = resp?.error
+        ? `${resp.message}: ${resp.error}`
+        : resp?.data
         ? `${resp.message}: ${resp.data}`
         : resp?.message ?? 'Registration failed. Check the admin JWT token and backend.';
       setError(msg);

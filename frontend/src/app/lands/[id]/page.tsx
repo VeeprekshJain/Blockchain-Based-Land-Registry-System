@@ -4,6 +4,13 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { landsApi, type Land } from '../../../lib/lands';
 import StatusBadge from '../../../components/StatusBadge';
+import { isConfiguredContractAddress, readLandDetails } from '../../../lib/landRegistry';
+
+function shortenHash(hash: string): string {
+  if (!hash) return '-';
+  if (hash.length <= 16) return hash;
+  return `${hash.slice(0, 8)}...${hash.slice(-8)}`;
+}
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -26,7 +33,26 @@ export default function LandDetailPage() {
     if (!id) return;
     landsApi
       .get(id)
-      .then((res) => setLand(res.data))
+      .then(async (res) => {
+        const baseLand = res.data;
+        if (!isConfiguredContractAddress()) {
+          setLand(baseLand);
+          return;
+        }
+
+        try {
+          const chain = await readLandDetails(baseLand.landId);
+          setLand({
+            ...baseLand,
+            liveOwnerAddress: chain.owner,
+            liveOwnerName: chain.ownerName,
+            liveLastTransferAt: new Date(Number(chain.lastTransferAt) * 1000).toISOString(),
+            liveIsActive: chain.isActive,
+          });
+        } catch {
+          setLand(baseLand);
+        }
+      })
       .catch(() => setError('Land parcel not found.'))
       .finally(() => setLoading(false));
   }, [id]);
@@ -64,9 +90,9 @@ export default function LandDetailPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="font-mono text-xs text-gray-400">{land.landId}</p>
-              <h1 className="mt-1 text-xl font-bold text-gray-900">{land.ownerName}</h1>
+              <h1 className="mt-1 text-xl font-bold text-gray-900">{land.liveOwnerName ?? land.ownerName}</h1>
             </div>
-            <StatusBadge active={land.isActive} />
+            <StatusBadge active={land.liveIsActive ?? land.isActive} />
           </div>
 
           {/* Divider */}
@@ -74,14 +100,14 @@ export default function LandDetailPage() {
 
           {/* Details */}
           <div className="divide-y divide-gray-100">
-            <Row label="Owner Address" value={land.ownerAddress} mono />
+            <Row label="Owner Address" value={land.liveOwnerAddress ?? land.ownerAddress} mono />
             <Row label="Location"      value={land.location} />
             <Row label="Area"          value={land.area} />
-            <Row label="Document Hash" value={land.documentHash} mono />
+            <Row label="Document Hash" value={shortenHash(land.documentHash)} mono />
             <Row label="Tx Hash"       value={land.txHash} mono />
             <Row label="Block Number"  value={`#${land.blockNumber}`} />
             <Row label="Registered At" value={new Date(land.registeredAt).toLocaleString()} />
-            <Row label="Last Transfer" value={new Date(land.lastTransferAt).toLocaleString()} />
+            <Row label="Last Transfer" value={new Date(land.liveLastTransferAt ?? land.lastTransferAt).toLocaleString()} />
           </div>
         </div>
 

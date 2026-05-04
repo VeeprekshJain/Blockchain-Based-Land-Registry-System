@@ -50,18 +50,42 @@ export async function registerLandHandler(req: Request, res: Response): Promise<
 
 export async function transferOwnershipHandler(req: Request, res: Response): Promise<void> {
   const input = validate(TransferOwnershipSchema, req.body);
+  
+  // Include IP address from request if not provided
+  if (!input.ipAddress && req.ip) {
+    input.ipAddress = req.ip;
+  }
+  
   const result = await transferLandOwnership(input);
 
-  res.json(
-    ApiResponse.success(
-      {
-        land:        result.land,
-        txHash:      result.txHash,
-        blockNumber: result.blockNumber,
-      },
-      'Land ownership transferred successfully',
-    ),
-  );
+  // Check if transfer has HIGH fraud risk (requires manual review)
+  if (result.fraudAnalysis?.riskLevel === 'high') {
+    res.status(202).json(
+      ApiResponse.success(
+        {
+          land:           result.land,
+          txHash:         result.txHash,
+          blockNumber:    result.blockNumber,
+          fraudAnalysis:  result.fraudAnalysis,
+          status:         'pending_manual_review',
+          message:        'Transfer completed but flagged for manual fraud review due to HIGH risk score',
+        },
+        'Transfer successful (pending fraud review)',
+      ),
+    );
+  } else {
+    res.json(
+      ApiResponse.success(
+        {
+          land:           result.land,
+          txHash:         result.txHash,
+          blockNumber:    result.blockNumber,
+          fraudAnalysis:  result.fraudAnalysis,
+        },
+        'Land ownership transferred successfully',
+      ),
+    );
+  }
 }
 
 // ─── PATCH /api/v1/lands/:landId/deactivate ───────────────────────────────────
@@ -120,14 +144,14 @@ export async function getLandHandler(req: Request, res: Response): Promise<void>
 // ─── GET /api/v1/lands ───────────────────────────────────────────────────────
 
 export async function listLandsHandler(req: Request, res: Response): Promise<void> {
-  const { page = 1, limit = 20 } = validate(PaginationQuerySchema, req.query);
+  const { page = 1, limit = 20, q } = validate(PaginationQuerySchema, req.query);
 
   // Optional ?active=true|false filter
   let filterActive: boolean | undefined;
   if (req.query['active'] === 'true')  filterActive = true;
   if (req.query['active'] === 'false') filterActive = false;
 
-  const result = await listLands(page, limit, filterActive);
+  const result = await listLands(page as number, limit as number, filterActive, q as string | undefined);
 
   res.json(
     ApiResponse.paginate(result.data, result.total, result.page, result.limit),
